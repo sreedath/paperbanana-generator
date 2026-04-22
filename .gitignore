@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.local
+*.log
+.DS_Store
+.vercel
+
+# Contains live API key — keep out of git
+API_GUIDE.md

@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PaperBanana API — Docs</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/docs.css" />
+  </head>
+  <body class="docs-body">
+    <header class="topbar">
+      <div class="brand"><span class="logo">🍌</span> PaperBanana API</div>
+      <a href="/" class="muted">← back to generator</a>
+    </header>
+
+    <main class="docs">
+      <section>
+        <h1>PaperBanana REST API</h1>
+        <p class="muted">Generate academic diagrams programmatically. Same pipeline and styling options as the web UI — exposed over bearer-token-authenticated HTTP.</p>
+        <p><strong>Base URL:</strong> <code>https://paperbanana-generator.vizuara.ai/v1</code></p>
+      </section>
+
+      <section>
+        <h2>Authentication</h2>
+        <p>Every request must include an <code>Authorization</code> header:</p>
+        <pre><code>Authorization: Bearer pb_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code></pre>
+        <p>Keys are minted by the workspace owner. Contact Vizuara if you need one. Keys are shown in plaintext exactly once at creation; only a SHA-256 hash is stored server-side.</p>
+      </section>
+
+      <section>
+        <h2>Rate limits</h2>
+        <p>Default: <strong>100 generations per UTC day per key</strong>. The quota is set per-key at creation time. When exceeded, the API returns <code>429 quota_exceeded</code>.</p>
+      </section>
+
+      <section>
+        <h2>Endpoints</h2>
+
+        <h3>POST <code>/v1/generate</code> — streaming sync</h3>
+        <p>Runs the full pipeline and streams progress as <code>application/x-ndjson</code> (one JSON object per line). Takes 60–90 s for the default 3-iteration run.</p>
+
+        <h4>Request body</h4>
+        <table class="params">
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+          <tr><td><code>description</code></td><td>string</td><td>✓</td><td>Natural-language description of the figure.</td></tr>
+          <tr><td><code>iterations</code></td><td>int 1–3</td><td>—</td><td>Pipeline iterations (default 3).</td></tr>
+          <tr><td><code>style</code></td><td>string</td><td>—</td><td>Style preset (see <code>GET /v1/config</code>).</td></tr>
+          <tr><td><code>text_density</code></td><td>string</td><td>—</td><td>One of <code>standard</code>, <code>minimal</code>, <code>light</code>, <code>dense</code>.</td></tr>
+          <tr><td><code>color_theme</code></td><td>string</td><td>—</td><td>Palette override (see config).</td></tr>
+          <tr><td><code>aspect_ratio</code></td><td>string</td><td>—</td><td>One of <code>1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9</code>.</td></tr>
+          <tr><td><code>model</code></td><td>string</td><td>—</td><td><code>auto</code> (default) or an explicit image model id.</td></tr>
+        </table>
+
+        <h4>Stream events</h4>
+        <p>Each line is a JSON object with a <code>type</code> field:</p>
+        <ul>
+          <li><code>meta</code> — echoes the resolved parameters</li>
+          <li><code>gen:start</code> / <code>gen:done</code> — per-iteration image generation</li>
+          <li><code>critic:start</code> / <code>critic:done</code> — per-iteration critique</li>
+          <li><code>done</code> — pipeline complete, with <code>totalMs</code></li>
+          <li><code>error</code> — pipeline failed</li>
+        </ul>
+        <p>Images arrive as base64 under <code>image.base64</code> with <code>image.mimeType</code>.</p>
+
+        <h3>POST <code>/v1/jobs</code> — async</h3>
+        <p>Returns <code>{ job_id, status_url }</code> immediately; pipeline runs in the background.</p>
+
+        <h3>GET <code>/v1/jobs/:id</code> — poll</h3>
+        <p>Returns current job state. Poll every few seconds. Completed images arrive inline as base64.</p>
+
+        <h3>GET <code>/v1/jobs</code> — list your key's recent jobs (last 24 h, up to 50)</h3>
+
+        <h3>POST <code>/v1/overlay</code> — composite a heading / logo / URL</h3>
+        <p>Takes a <code>image_base64</code> (typically one of your generated iterations) plus optional <code>heading</code>, <code>show_logo</code>, <code>url</code>. Returns a new PNG.</p>
+
+        <h3>GET <code>/v1/config</code> — capabilities discovery</h3>
+        <p>No auth required. Returns the full list of styles, text densities, color themes, aspect ratios, image models.</p>
+      </section>
+
+      <section>
+        <h2>Examples</h2>
+
+        <h3>curl — sync streaming</h3>
+        <pre><code>curl -N -X POST https://paperbanana-generator.vizuara.ai/v1/generate \
+  -H "Authorization: Bearer $PB_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "A left-to-right transformer pipeline with tokenizer, positional encoding, encoder blocks, decoder with masked attention, and softmax output.",
+    "iterations": 3,
+    "style": "research-paper",
+    "color_theme": "ocean",
+    "aspect_ratio": "16:9"
+  }'</code></pre>
+
+        <h3>curl — async</h3>
+        <pre><code># 1. create the job
+curl -X POST https://paperbanana-generator.vizuara.ai/v1/jobs \
+  -H "Authorization: Bearer $PB_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"description":"U-Net segmentation architecture", "iterations": 3}'
+# → {"job_id":"job_abc...","status_url":"..."}
+
+# 2. poll until status == "succeeded"
+curl https://paperbanana-generator.vizuara.ai/v1/jobs/job_abc... \
+  -H "Authorization: Bearer $PB_KEY"</code></pre>
+
+        <h3>Python — async with polling</h3>
+        <pre><code>import os, time, base64, requests
+
+BASE = "https://paperbanana-generator.vizuara.ai/v1"
+H = {"Authorization": f"Bearer {os.environ['PB_KEY']}"}
+
+r = requests.post(f"{BASE}/jobs", headers=H, json={
+    "description": "Retrieval-augmented generation pipeline with a vector store.",
+    "iterations": 3, "style": "presentation", "color_theme": "berry",
+})
+r.raise_for_status()
+job_id = r.json()["job_id"]
+
+while True:
+    job = requests.get(f"{BASE}/jobs/{job_id}", headers=H).json()
+    if job["status"] in ("succeeded", "failed"): break
+    print(job["progress"]); time.sleep(3)
+
+assert job["status"] == "succeeded", job["error"]
+for it in job["iterations"]:
+    with open(f"iter-{it['iteration']}.png", "wb") as f:
+        f.write(base64.b64decode(it["base64"]))
+print(f"wrote {len(job['iterations'])} images")
+</code></pre>
+
+        <h3>Node — streaming sync</h3>
+        <pre><code>import fs from "node:fs";
+
+const res = await fetch("https://paperbanana-generator.vizuara.ai/v1/generate", {
+  method: "POST",
+  headers: {
+    "Authorization": `Bearer ${process.env.PB_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ description: "...", iterations: 3 }),
+});
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+let buf = "";
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  buf += decoder.decode(value, { stream: true });
+  const lines = buf.split("\n"); buf = lines.pop();
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const ev = JSON.parse(line);
+    if (ev.type === "gen:done") {
+      fs.writeFileSync(`iter-${ev.iteration}.png`,
+        Buffer.from(ev.image.base64, "base64"));
+      console.log(`saved iteration ${ev.iteration}`);
+    }
+  }
+}</code></pre>
+      </section>
+
+      <section>
+        <h2>Error shape</h2>
+        <pre><code>{
+  "error": {
+    "code": "quota_exceeded",
+    "message": "Daily quota of 100 requests reached. Resets at 00:00 UTC.",
+    "used": 100,
+    "quota": 100
+  }
+}</code></pre>
+        <p>Common codes: <code>unauthenticated</code>, <code>quota_exceeded</code>, <code>invalid_request</code>, <code>not_found</code>, <code>overlay_failed</code>, <code>pipeline_error</code>.</p>
+      </section>
+
+      <section>
+        <h2>Admin (for the workspace owner)</h2>
+        <p>Gated by the server's <code>ADMIN_TOKEN</code> env var.</p>
+        <pre><code># Mint a key
+curl -X POST https://paperbanana-generator.vizuara.ai/v1/admin/keys \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Rajat - iPad tests", "daily_quota": 200}'
+# → { id, name, daily_quota, key: "pb_live_..." }   ⚠ save `key` NOW
+
+# List keys + today's usage
+curl -H "Authorization: Bearer $ADMIN_TOKEN" \
+  https://paperbanana-generator.vizuara.ai/v1/admin/keys
+
+# Revoke
+curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" \
+  https://paperbanana-generator.vizuara.ai/v1/admin/keys/key_xxxxxxxx</code></pre>
+      </section>
+    </main>
+  </body>
+</html>

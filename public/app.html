@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PaperBanana — Generate</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Roboto:wght@400;700&family=Montserrat:wght@400;700;800&family=Lato:wght@400;700&family=Playfair+Display:wght@400;700&family=Source+Sans+3:wght@400;700&family=Source+Serif+4:wght@400;700&family=Space+Grotesk:wght@400;700&family=IBM+Plex+Mono:wght@400;600&display=swap" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/fabric@5.3.0/dist/fabric.min.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><span class="logo">🍌</span> PaperBanana</div>
+      <div class="user" id="user"></div>
+    </header>
+
+    <main class="app">
+      <section class="pane input-pane">
+        <label for="description"><strong>Describe your figure</strong></label>
+        <p class="muted">Plain English works. PaperBanana-style academic styling is applied automatically. The system generates 3 candidate images with a critic refining between iterations.</p>
+        <textarea id="description" rows="10" placeholder="Example: A left-to-right transformer pipeline with an input tokenizer, positional encoding, stacked encoder blocks (multi-head attention → feed-forward), a decoder with masked self-attention, and a final softmax output. Group encoder and decoder with pastel backgrounds."></textarea>
+
+        <div class="controls">
+          <div class="field">
+            <label for="style">Style</label>
+            <select id="style"></select>
+          </div>
+          <div class="field">
+            <label for="textDensity">Text density</label>
+            <select id="textDensity"></select>
+          </div>
+          <div class="field">
+            <label for="aspectRatio">Aspect ratio</label>
+            <select id="aspectRatio">
+              <option value="">Auto</option>
+              <option value="16:9">16:9 — wide pipeline</option>
+              <option value="4:3">4:3 — balanced</option>
+              <option value="1:1">1:1 — square</option>
+              <option value="3:4">3:4 — portrait</option>
+              <option value="9:16">9:16 — tall</option>
+              <option value="21:9">21:9 — ultrawide</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="iterations">Iterations</label>
+            <select id="iterations">
+              <option value="3" selected>3 — full critic loop (recommended)</option>
+              <option value="2">2 — one critique</option>
+              <option value="1">1 — single shot (fastest)</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label for="imageModel">Image model</label>
+            <select id="imageModel"></select>
+          </div>
+        </div>
+
+        <div class="field color-themes-field">
+          <label>Color theme <span class="muted">(click to select, click again to clear)</span></label>
+          <div id="colorThemes" class="color-theme-grid"></div>
+        </div>
+
+        <div class="row">
+          <button id="generate" class="btn btn-primary">Generate</button>
+          <button id="reset" class="btn btn-ghost" type="button">Reset</button>
+        </div>
+
+        <div class="row backup-row">
+          <span class="muted small">Backup:</span>
+          <button id="exportBackup" class="btn btn-ghost btn-tiny" type="button" title="Download current session (images + edits) as a .json file">Download backup</button>
+          <label class="btn btn-ghost btn-tiny" for="importBackupInput" title="Restore a session from a .json backup file">
+            Restore backup
+            <input type="file" id="importBackupInput" accept="application/json,.json" hidden />
+          </label>
+          <button id="clearSession" class="btn btn-ghost btn-tiny" type="button" title="Remove saved session">Clear saved</button>
+        </div>
+        <p class="muted small backup-hint">Your work auto-saves to this browser's local storage and restores on refresh. Use <strong>Download backup</strong> for a portable <code>.json</code> copy you can keep or open on another device.</p>
+
+        <p id="status" class="status" hidden></p>
+      </section>
+
+      <section class="pane output-pane">
+        <div id="progress" class="progress" hidden>
+          <div class="progress-label" id="progressLabel">Starting…</div>
+          <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+          <div class="progress-steps" id="progressSteps"></div>
+        </div>
+
+        <div id="empty" class="empty">Your generated figures will appear here.</div>
+        <div id="grid" class="grid" hidden></div>
+
+        <div id="editor" class="editor" hidden>
+          <div class="editor-top">
+            <h3>Canvas editor</h3>
+            <p class="muted">Drag objects to position. Drag corner handles to resize. Double-click text to edit. All overlays are client-side — the PaperBanana image itself is never modified.</p>
+          </div>
+
+          <div class="editor-layout">
+            <div class="editor-canvas-wrap">
+              <canvas id="editorCanvas"></canvas>
+            </div>
+
+            <aside class="editor-controls">
+              <div class="ctrl-group">
+                <label class="field-inline">
+                  <input type="checkbox" id="headingOn" />
+                  <strong>Heading</strong>
+                </label>
+                <input type="text" id="headingText" placeholder="e.g. Figure 1: Transformer architecture" />
+                <div class="ctrl-row">
+                  <label for="headingFont" class="small">Font</label>
+                  <select id="headingFont" class="font-select"></select>
+                </div>
+                <div class="ctrl-row">
+                  <label for="headingSize" class="small">Size</label>
+                  <input type="range" id="headingSize" min="12" max="120" step="1" value="48" />
+                  <span id="headingSizeVal" class="small num">48</span>
+                </div>
+                <div class="ctrl-row">
+                  <label for="headingColor" class="small">Color</label>
+                  <input type="color" id="headingColor" value="#1f2330" />
+                  <div class="type-toggles" aria-label="Heading type style">
+                    <button type="button" class="type-btn" id="headingBoldBtn" title="Bold"><b>B</b></button>
+                    <button type="button" class="type-btn" id="headingItalicBtn" title="Italic"><i>I</i></button>
+                    <button type="button" class="type-btn" id="headingUnderlineBtn" title="Underline"><u>U</u></button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ctrl-group">
+                <label class="field-inline">
+                  <input type="checkbox" id="logoOn" />
+                  <strong>Logo</strong>
+                </label>
+                <div class="ctrl-row">
+                  <input type="file" id="logoFile" accept="image/*" class="small" />
+                  <button id="logoResetDefault" class="btn btn-ghost btn-tiny" type="button">Use default</button>
+                </div>
+                <div class="ctrl-row">
+                  <label for="logoSize" class="small">Size</label>
+                  <input type="range" id="logoSize" min="20" max="300" step="1" value="80" />
+                  <span id="logoSizeVal" class="small num">80</span>
+                </div>
+              </div>
+
+              <div class="ctrl-group">
+                <label class="field-inline">
+                  <input type="checkbox" id="urlOn" />
+                  <strong>URL</strong>
+                </label>
+                <input type="text" id="urlText" placeholder="e.g. vizuara.ai" value="vizuara.ai" />
+                <div class="ctrl-row">
+                  <label for="urlFont" class="small">Font</label>
+                  <select id="urlFont" class="font-select"></select>
+                </div>
+                <div class="ctrl-row">
+                  <label for="urlSize" class="small">Size</label>
+                  <input type="range" id="urlSize" min="10" max="80" step="1" value="24" />
+                  <span id="urlSizeVal" class="small num">24</span>
+                </div>
+                <div class="ctrl-row">
+                  <label for="urlColor" class="small">Color</label>
+                  <input type="color" id="urlColor" value="#1f2330" />
+                  <div class="type-toggles" aria-label="URL type style">
+                    <button type="button" class="type-btn" id="urlBoldBtn" title="Bold"><b>B</b></button>
+                    <button type="button" class="type-btn" id="urlItalicBtn" title="Italic"><i>I</i></button>
+                    <button type="button" class="type-btn" id="urlUnderlineBtn" title="Underline"><u>U</u></button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ctrl-actions">
+                <button id="download" class="btn btn-primary">Download PNG</button>
+                <button id="editorReset" class="btn btn-ghost" type="button">Reset layout</button>
+                <span id="meta" class="muted small"></span>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

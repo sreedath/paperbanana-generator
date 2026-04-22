@@ -1,0 +1,26 @@
+{
+  "name": "paperbanana-website",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PaperBanana web UI — one-click academic diagram generation via Gemini",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@google/genai": "^1.28.0",
+    "@upstash/redis": "^1.37.0",
+    "@vercel/functions": "^3.4.4",
+    "cookie-session": "^2.1.1",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "ioredis": "^5.10.1",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
+    "sharp": "^0.34.5"
+  }
+}
